@@ -4,6 +4,91 @@ import pickle
 import torch
 import torch.nn.functional as F
 
+def normalize_digraph(A):
+    Dl = np.sum(A, 0)
+    num_node = A.shape[0]
+    Dn = np.zeros((num_node, num_node))
+    for i in range(num_node):
+        if Dl[i] > 0:
+            Dn[i, i] = Dl[i]**(-1)
+    AD = np.dot(A, Dn)
+    return AD
+
+
+def normalize_undigraph(A):
+    Dl = np.sum(A, 0)
+    num_node = A.shape[0]
+    Dn = np.zeros((num_node, num_node))
+    for i in range(num_node):
+        if Dl[i] > 0:
+            Dn[i, i] = Dl[i]**(-0.5)
+    DAD = np.dot(np.dot(Dn, A), Dn)
+
+class Graph():
+    """ The Graph to model the skeletons extracted by the openpose
+
+    Args:
+        strategy (string): must be one of the follow candidates
+        - uniform: Uniform Labeling
+        - distance: Distance Partitioning
+        - spatial: Spatial Configuration
+        For more information, please refer to the section 'Partition Strategies'
+            in our paper (https://arxiv.org/abs/1801.07455).
+
+        layout (string): must be one of the follow candidates
+        - openpose: Is consists of 18 joints. For more information, please
+            refer to https://github.com/CMU-Perceptual-Computing-Lab/openpose#output
+        - ntu-rgb+d: Is consists of 25 joints. For more information, please
+            refer to https://github.com/shahroudy/NTURGB-D
+
+        max_hop (int): the maximal distance between two connected nodes
+        dilation (int): controls the spacing between the kernel points
+
+    """
+
+    def __init__(self,
+                 market='NASDAQ',
+                 strategy='uniform',
+                 relation_path=None):
+        self.get_edge(market, relation_path)
+        self.get_adjacency(strategy)
+
+    def __str__(self):
+        return self.A
+
+    def get_edge(self, market, relation_path):
+        if market == 'NASDAQ':
+            self.num_node = 854
+            self_link = np.eye(self.num_node)
+            raw_relation = np.load(relation_path)
+            # abandon the last dimension of the raw relation as it is the self connected
+            self.relation = raw_relation[:,:,:-1]
+            _relation = np.sum(self.relation, axis=2)
+            _relation[_relation>=1] = 1
+            self.edge = self_link + _relation
+
+        elif market == 'NYSE':
+            self.num_node = 1405
+            self_link = np.eye(self.num_node)
+            raw_relation = np.load(relation_path)
+            self.relation = raw_relation[:,:,:-1]
+            _relation = np.sum(self.relation, axis=2)
+            _relation[_relation>=1] = 1
+            self.edge = self_link + _relation
+        else:
+            raise ValueError("Do Not Exist This Layout.")
+
+    def get_adjacency(self, strategy):
+        adjacency = self.edge
+
+        if strategy == 'uniform':
+            normalize_adjacency = normalize_digraph(adjacency)
+            A = np.zeros((1, self.num_node, self.num_node))
+            A[0] = normalize_adjacency
+            self.A = A
+        else:
+            raise ValueError("Do Not Exist This Strategy")
+
 def auto_pading(data_numpy, size, random_pad=False):
     C, T, V, M = data_numpy.shape
     if T < size:
